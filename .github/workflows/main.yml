@@ -1,0 +1,107 @@
+name: Import MT6897 Kernel Source
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-kernel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            wget \
+            curl \
+            tar \
+            gzip \
+            rsync
+
+      - name: Download kernel source
+        run: |
+          wget \
+            --progress=dot:giga \
+            -O android15_kernel_MT6897.tar.gz \
+            "https://d13pvy8xd75yde.cloudfront.net/android/ru_Official/camon_40_premier_5g_pova_7_ultra_5g/android15_kernel_MT6897.tar.gz"
+
+          ls -lh android15_kernel_MT6897.tar.gz
+
+      - name: Extract kernel archive
+        run: |
+          mkdir -p extracted
+
+          tar -xzf android15_kernel_MT6897.tar.gz \
+            -C extracted
+
+          echo "Extracted directories:"
+          find extracted -maxdepth 3 -type d | head -100
+
+      - name: Find kernel-6.1
+        id: kernel
+        shell: bash
+        run: |
+          KERNEL_DIR="$(find extracted -type d -name "kernel-6.1" | head -n 1)"
+
+          if [ -z "$KERNEL_DIR" ]; then
+            echo "kernel-6.1 directory not found"
+            echo
+            echo "Archive structure:"
+            find extracted -maxdepth 4 | head -200
+            exit 1
+          fi
+
+          echo "Found kernel directory:"
+          echo "$KERNEL_DIR"
+
+          echo "path=$KERNEL_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Remove temporary files from repository
+        run: |
+          rm -f android15_kernel_MT6897.tar.gz
+
+      - name: Copy kernel-6.1 contents to repository
+        run: |
+          KERNEL_DIR="${{ steps.kernel.outputs.path }}"
+
+          rsync -a \
+            --exclude='.git' \
+            "$KERNEL_DIR/" \
+            ./
+
+      - name: Remove extraction directory
+        run: |
+          rm -rf extracted
+
+      - name: Show repository status
+        run: |
+          git status --short | head -200
+
+      - name: Commit kernel source
+        shell: bash
+        run: |
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Import Android 15 MT6897 kernel-6.1 source"
+
+      - name: Push changes
+        run: |
+          git push origin HEAD:${{ github.ref_name }}
